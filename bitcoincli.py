@@ -104,6 +104,6 @@ class RPC:
 
 
 def testRPC():
-  rpc = RPC(username="erik", password="123123", port=38332, address="localhost")
+  rpc = RPC(username="XXX", password="XXX", port=8332, address="localhost")
   block = rpc.getbestBlockhash()
   print(rpc.getBlockWithTransactions(block))
