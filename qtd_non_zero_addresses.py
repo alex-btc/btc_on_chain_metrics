@@ -138,6 +138,7 @@ addresses = {} # saldo de cada endereço, movimenta a cada bloco
 last_moved = {} # bloco da ultima movimentacao de cada endereco
 values = [] # valor de cada transacao, pra estatistica, soh pego dos outputs.
 values_block = [] # bloco de cada transacao, pra estatistica, soh pego dos outputs.
+timestamp = {} # unix timestamp de cada bloco
 
 # debug:
 # block = 123456
@@ -155,7 +156,9 @@ for block in tqdm(range(initial_block, final_block)):
     blockhash = rpc.getBlockHashByHeight(block)
 
     # pega as transacoes do bloco:
-    txs = rpc.getBlockWithTransactions(blockhash)['tx']
+    blockinfo = rpc.getBlockWithTransactions(blockhash)
+    txs = blockinfo['tx']
+    timestamp[block] = blockinfo['time']
 
     for tx in txs:
         # soma saldo:
@@ -217,11 +220,13 @@ for block in tqdm(range(initial_block, final_block)):
         pd.Series(qty_non_zero_addresses_per_block).to_csv(data_path + 'qty_non_zero_addresses_per_block.csv')
         pd.Series(values, index=values_block).to_csv(data_path + 'values.csv')
         pd.Series(last_moved).to_csv(data_path + 'last_moved.csv')
+        pd.Series(timestamp).to_csv(data_path + 'timestamp.csv')
 
 # dataframes:
 addresses_df = pd.Series(addresses)
 values_df = pd.Series(values, index=values_block).sort_values()
 last_moved_df = pd.Series(last_moved)
+timestamp_df = pd.Series(timestamp)
 
 # plotting:
 pd.Series(qty_non_zero_addresses_per_block).plot()
