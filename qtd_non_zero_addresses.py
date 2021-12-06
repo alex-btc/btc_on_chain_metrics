@@ -5,6 +5,7 @@ import subprocess
 import os
 from tqdm import tqdm
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 %matplotlib
 
@@ -147,6 +148,7 @@ timestamp = {} # unix timestamp de cada bloco
 # final_block = 171 # hal finney tx was on block 170
 
 initial_block = 1
+initial_block = 180001 # recomecando, ultimo bloco foi o 180000
 # final_block = 1000
 final_block = last_block # ateh o final
 
@@ -206,9 +208,14 @@ for block in tqdm(range(initial_block, final_block)):
 
                 last_moved[address] = -block # se bloco eh negativo, movimentacao foi debito no endereco.
 
-    addresses_df = pd.Series(addresses)
-    qty_non_zero_addresses_per_block[block] = len(addresses_df[addresses_df > threshold_min_btc])
-    del addresses_df
+    # deprecado, estava demorando muito, substitui por numpy abaixo, mas o melhor seria registrar direto em uma numpy array, nao em um dict (fica pro futuro):
+    # addresses_df = pd.Series(addresses)
+    # qty_non_zero_addresses_per_block[block] = len(addresses_df[addresses_df > threshold_min_btc])
+    # del addresses_df
+
+    addresses_array = np.fromiter(addresses.values(), dtype=float) # o mais rapido ateh agora
+    qty_non_zero_addresses_per_block[block] = (addresses_array > threshold_min_btc).sum()
+    del addresses_array
 
     # grava dados a cada qtd_blocos_gravar:
     if block % qtd_blocos_gravar == 0:
@@ -221,6 +228,8 @@ for block in tqdm(range(initial_block, final_block)):
         pd.Series(values, index=values_block).to_csv(data_path + 'values.csv')
         pd.Series(last_moved).to_csv(data_path + 'last_moved.csv')
         pd.Series(timestamp).to_csv(data_path + 'timestamp.csv')
+        # refaz a conexao, porque a gravacao dos dados acima pode demorar um pouco e aih a conexao cai.
+        rpc = RPC(username=username, password=password, port=8332, address="localhost")
 
 # dataframes:
 addresses_df = pd.Series(addresses)
