@@ -149,10 +149,14 @@ timestamp = {} # unix timestamp de cada bloco
 
 initial_block = 1
 initial_block = 180001 # recomecando, ultimo bloco foi o 180000
+initial_block = 290000 # recomecando, ultimo bloco foi o 180000
 # final_block = 1000
 final_block = last_block # ateh o final
 
 for block in tqdm(range(initial_block, final_block)):
+
+    # reinicia a conexao:
+    rpc = RPC(username=username, password=password, port=8332, address="localhost")
 
     # descobre o hash do bloco:
     blockhash = rpc.getBlockHashByHeight(block)
@@ -162,7 +166,8 @@ for block in tqdm(range(initial_block, final_block)):
     txs = blockinfo['tx']
     timestamp[block] = blockinfo['time']
 
-    for tx in txs:
+    # for tx in txs:
+    for tx in tqdm(txs):
         # soma saldo:
         for output in tx['vout']:
             if 'addresses' in output['scriptPubKey'].keys():
@@ -170,11 +175,11 @@ for block in tqdm(range(initial_block, final_block)):
             else:
                 address = output['scriptPubKey']['hex'] # nesse caso, armazeno a public key como se fosse o address, para outros tipos de transacao obsoletas, dos primeiros blocos.
 
-            value_to_add = output['value']
+            value_to_add = float(output['value'])
             if address in addresses.keys():
-                addresses[address] = float(addresses[address]) + float(value_to_add)
+                addresses[address] = addresses[address] + value_to_add
             else:
-                addresses[address] = float(value_to_add)
+                addresses[address] = value_to_add
 
             last_moved[address] = block # se bloco eh positivo, movimentacao foi credito no endereco.
 
@@ -192,7 +197,7 @@ for block in tqdm(range(initial_block, final_block)):
         for input in list(inputs.keys()):
             if inputs[input] != 'coinbase': # se eh transacao coinbase nao ha o que diminuir.
                 tx_temp = rpc.getTransaction(input)
-                value_to_subtract = tx_temp['vout'][inputs[input]]['value'] # usa o index pra encontrar o output certo
+                value_to_subtract = float(tx_temp['vout'][inputs[input]]['value']) # usa o index pra encontrar o output certo
                 
                 tipo_tx = tx_temp['vout'][inputs[input]]['scriptPubKey']['type']
 
@@ -202,9 +207,9 @@ for block in tqdm(range(initial_block, final_block)):
                     address = tx_temp['vout'][inputs[input]]['scriptPubKey']['addresses'][0]
                 
                 if address in addresses.keys():
-                    addresses[address] = float(addresses[address]) - float(value_to_subtract)
+                    addresses[address] = addresses[address] - value_to_subtract
                 else:
-                    addresses[address] = -float(value_to_subtract)
+                    addresses[address] = -value_to_subtract
 
                 last_moved[address] = -block # se bloco eh negativo, movimentacao foi debito no endereco.
 
