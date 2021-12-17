@@ -121,8 +121,8 @@ def testRPC(username, password):
 #####
 
 # altere aqui o rpcuser e rpcpassword do seu arquivo bitcoin.conf
-username = 'XXXX'
-password = 'XXXX'
+# username = 'XXXX'
+# password = 'XXXX'
 
 rpc = RPC(username=username, password=password, port=8332, address="localhost")
 
@@ -136,10 +136,14 @@ qtd_blocos_gravar = 10000
 qty_non_zero_addresses_per_block = {}
 
 addresses = {} # saldo de cada endereço, movimenta a cada bloco
-last_moved = {} # bloco da ultima movimentacao de cada endereco
-values = [] # valor de cada transacao, pra estatistica, soh pego dos outputs.
-values_block = [] # bloco de cada transacao, pra estatistica, soh pego dos outputs.
+# last_moved = {} # bloco da ultima movimentacao de cada endereco
+# values = [] # valor de cada transacao, pra estatistica, soh pego dos outputs.
+# values_block = [] # bloco de cada transacao, pra estatistica, soh pego dos outputs.
 timestamp = {} # unix timestamp de cada bloco
+qty_addresses_add_balance_in_this_block = {} # quantidade de enderecos que tiveram aumento de saldo nesse bloco
+qty_addresses_subtract_balance_in_this_block = {} # quantidade de enderecos que tiveram diminuicao de saldo nesse bloco
+qty_btc_subtract_inputs_in_this_block = {} # quantidade de btcs que foram creditados nesse bloco
+qty_btc_add_inputs_in_this_block = {} # quantidade de btcs que foram subtraidos nesse bloco
 
 # debug:
 # block = 123456
@@ -148,99 +152,136 @@ timestamp = {} # unix timestamp de cada bloco
 # final_block = 171 # hal finney tx was on block 170
 
 initial_block = 1
-initial_block = 180001 # recomecando, ultimo bloco foi o 180000
-initial_block = 290000 # recomecando, ultimo bloco foi o 180000
-# final_block = 1000
-final_block = last_block # ateh o final
+# initial_block = 180001 # recomecando, ultimo bloco foi o 180000
+# initial_block = 290000 # recomecando, ultimo bloco foi o 180000
+# initial_block = 310001 # recomecando, ultimo bloco foi o 310000
+final_block = 51000
+# final_block = last_block # ateh o final
 
 for block in tqdm(range(initial_block, final_block)):
 
-    # reinicia a conexao:
-    rpc = RPC(username=username, password=password, port=8332, address="localhost")
+  qty_addresses_add_balance = 0
+  qty_addresses_subtract_balance = 0
 
-    # descobre o hash do bloco:
-    blockhash = rpc.getBlockHashByHeight(block)
+  qty_btc_add_outputs = 0
+  qty_btc_subtract_inputs = 0
 
-    # pega as transacoes do bloco:
-    blockinfo = rpc.getBlockWithTransactions(blockhash)
-    txs = blockinfo['tx']
-    timestamp[block] = blockinfo['time']
+  # reinicia a conexao:
+  rpc = RPC(username=username, password=password, port=8332, address="localhost")
 
-    # for tx in txs:
-    for tx in tqdm(txs):
-        # soma saldo:
-        for output in tx['vout']:
-            if 'addresses' in output['scriptPubKey'].keys():
-                address = output['scriptPubKey']['addresses'][0]
-            else:
-                address = output['scriptPubKey']['hex'] # nesse caso, armazeno a public key como se fosse o address, para outros tipos de transacao obsoletas, dos primeiros blocos.
+  # descobre o hash do bloco:
+  blockhash = rpc.getBlockHashByHeight(block)
 
-            value_to_add = float(output['value'])
-            if address in addresses.keys():
-                addresses[address] = addresses[address] + value_to_add
-            else:
-                addresses[address] = value_to_add
+  # pega as transacoes do bloco:
+  blockinfo = rpc.getBlockWithTransactions(blockhash)
+  txs = blockinfo['tx']
+  timestamp[block] = blockinfo['time']
 
-            last_moved[address] = block # se bloco eh positivo, movimentacao foi credito no endereco.
+  for tx in txs:
+  # for tx in tqdm(txs):
+      # soma saldo:
+      for output in tx['vout']:
 
-            values.append(float(value_to_add))
-            values_block.append(block)
+          qty_addresses_add_balance += 1 
 
-        # diminui saldo:
-        inputs = {}
-        for input in tx['vin']:
-            if 'coinbase' in input.keys(): # block reward, nao tem output previo:
-                inputs['coinbase'] = 'coinbase'
-            else:
-                inputs[input['txid']] = input['vout'] # txid e o index dos outputs dela que gerou esse input
-        
-        for input in list(inputs.keys()):
-            if inputs[input] != 'coinbase': # se eh transacao coinbase nao ha o que diminuir.
-                tx_temp = rpc.getTransaction(input)
-                value_to_subtract = float(tx_temp['vout'][inputs[input]]['value']) # usa o index pra encontrar o output certo
-                
-                tipo_tx = tx_temp['vout'][inputs[input]]['scriptPubKey']['type']
+          if 'addresses' in output['scriptPubKey'].keys():
+              address = output['scriptPubKey']['addresses'][0]
+          else:
+              address = output['scriptPubKey']['hex'] # nesse caso, armazeno a public key como se fosse o address, para outros tipos de transacao obsoletas, dos primeiros blocos.
 
-                if (tipo_tx == 'pubkey') or (tipo_tx == 'nonstandard'): # tipo de txs obsoletas
-                    address = tx_temp['vout'][inputs[input]]['scriptPubKey']['hex']
-                else:
-                    address = tx_temp['vout'][inputs[input]]['scriptPubKey']['addresses'][0]
-                
-                if address in addresses.keys():
-                    addresses[address] = addresses[address] - value_to_subtract
-                else:
-                    addresses[address] = -value_to_subtract
+          value_to_add = float(output['value'])
+          if address in addresses.keys():
+              addresses[address] = addresses[address] + value_to_add
+          else:
+              addresses[address] = value_to_add
 
-                last_moved[address] = -block # se bloco eh negativo, movimentacao foi debito no endereco.
+          qty_btc_add_outputs += value_to_add
 
-    # deprecado, estava demorando muito, substitui por numpy abaixo, mas o melhor seria registrar direto em uma numpy array, nao em um dict (fica pro futuro):
-    # addresses_df = pd.Series(addresses)
-    # qty_non_zero_addresses_per_block[block] = len(addresses_df[addresses_df > threshold_min_btc])
-    # del addresses_df
+          # last_moved[address] = block # se bloco eh positivo, movimentacao foi credito no endereco.
 
-    addresses_array = np.fromiter(addresses.values(), dtype=float) # o mais rapido ateh agora
-    qty_non_zero_addresses_per_block[block] = (addresses_array > threshold_min_btc).sum()
-    del addresses_array
+          # values.append(float(value_to_add))
+          # values_block.append(block)
 
-    # grava dados a cada qtd_blocos_gravar:
-    if block % qtd_blocos_gravar == 0:
-        # altere aqui o diretorio em que quer gravar os resultados:
-        data_path = 'C:/code/btc_on_chain_metrics/output/'
-        if not os.path.isdir(data_path): # se diretorio ainda nao existe:
-          os.mkdir(data_path)
-        pd.Series(addresses).to_csv(data_path + 'addresses.csv')
-        pd.Series(qty_non_zero_addresses_per_block).to_csv(data_path + 'qty_non_zero_addresses_per_block.csv')
-        pd.Series(values, index=values_block).to_csv(data_path + 'values.csv')
-        pd.Series(last_moved).to_csv(data_path + 'last_moved.csv')
-        pd.Series(timestamp).to_csv(data_path + 'timestamp.csv')
-        # refaz a conexao, porque a gravacao dos dados acima pode demorar um pouco e aih a conexao cai.
-        rpc = RPC(username=username, password=password, port=8332, address="localhost")
+      # diminui saldo:
+      inputs = {}
+      for input in tx['vin']:
+      
+          if 'coinbase' in input.keys(): # block reward, nao tem output previo:
+              inputs['coinbase'] = 'coinbase'
+          else:
+              inputs[input['txid']] = input['vout'] # txid e o index dos outputs dela que gerou esse input
+
+              qty_addresses_subtract_balance += 1
+
+      for input in list(inputs.keys()):
+          if inputs[input] != 'coinbase': # se eh transacao coinbase nao ha o que diminuir.
+              tx_temp = rpc.getTransaction(input)
+              value_to_subtract = float(tx_temp['vout'][inputs[input]]['value']) # usa o index pra encontrar o output certo
+              
+              tipo_tx = tx_temp['vout'][inputs[input]]['scriptPubKey']['type']
+
+              if (tipo_tx == 'pubkey') or (tipo_tx == 'nonstandard'): # tipo de txs obsoletas
+                  address = tx_temp['vout'][inputs[input]]['scriptPubKey']['hex']
+              else:
+                  address = tx_temp['vout'][inputs[input]]['scriptPubKey']['addresses'][0]
+              
+              if address in addresses.keys():
+                  addresses[address] = addresses[address] - value_to_subtract
+              else:
+                  addresses[address] = -value_to_subtract
+              
+              qty_btc_subtract_inputs += value_to_subtract
+
+
+              # last_moved[address] = -block # se bloco eh negativo, movimentacao foi debito no endereco.
+
+
+
+  # deprecado, estava demorando muito, substitui por numpy abaixo, mas o melhor seria registrar direto em uma numpy array, nao em um dict (fica pro futuro):
+  # addresses_df = pd.Series(addresses)
+  # qty_non_zero_addresses_per_block[block] = len(addresses_df[addresses_df > threshold_min_btc])
+  # del addresses_df
+
+  addresses_array = np.fromiter(addresses.values(), dtype=float) # o mais rapido ateh agora
+  qty_non_zero_addresses_per_block[block] = (addresses_array > threshold_min_btc).sum()
+  del addresses_array
+
+  qty_addresses_add_balance_in_this_block[block] = qty_addresses_add_balance
+  qty_addresses_subtract_balance_in_this_block[block] = qty_addresses_subtract_balance
+
+  qty_btc_add_inputs_in_this_block[block] = qty_btc_add_outputs
+  qty_btc_subtract_inputs_in_this_block[block] = qty_btc_subtract_inputs
+
+  
+
+
+  # grava dados a cada qtd_blocos_gravar:
+  if block % qtd_blocos_gravar == 0:
+      # limpa addresses vazios:
+      addresses = {address:value for (address, value) in addresses.items() if value > 0}
+      
+      # altere aqui o diretorio em que quer gravar os resultados:
+      data_path = 'C:/code/btc_on_chain_metrics/output/'
+      if not os.path.isdir(data_path): # se diretorio ainda nao existe:
+        os.mkdir(data_path)
+      pd.Series(addresses).to_csv(data_path + 'addresses.csv')
+      pd.Series(qty_non_zero_addresses_per_block).to_csv(data_path + 'qty_non_zero_addresses_per_block.csv')
+      pd.Series(qty_addresses_add_balance_in_this_block).to_csv(data_path + 'qty_addresses_add_balance_in_this_block.csv')
+      pd.Series(qty_addresses_subtract_balance_in_this_block).to_csv(data_path + 'qty_addresses_subtract_balance_in_this_block.csv')
+      pd.Series(qty_btc_subtract_inputs_in_this_block).to_csv(data_path + 'qty_btc_subtract_inputs_in_this_block.csv')
+      pd.Series(qty_btc_add_inputs_in_this_block).to_csv(data_path + 'qty_btc_add_inputs_in_this_block.csv')
+      pd.Series(timestamp).to_csv(data_path + 'timestamp.csv')
+      
+      # pd.Series(values, index=values_block).to_csv(data_path + 'values.csv')
+      # pd.Series(last_moved).to_csv(data_path + 'last_moved.csv')
+      # refaz a conexao, porque a gravacao dos dados acima pode demorar um pouco e aih a conexao cai.
+      rpc = RPC(username=username, password=password, port=8332, address="localhost")
 
 # dataframes:
-addresses_df = pd.Series(addresses)
-values_df = pd.Series(values, index=values_block).sort_values()
-last_moved_df = pd.Series(last_moved)
-timestamp_df = pd.Series(timestamp)
+# addresses_df = pd.Series(addresses)
+# values_df = pd.Series(values, index=values_block).sort_values()
+# last_moved_df = pd.Series(last_moved)
+# timestamp_df = pd.Series(timestamp)
 
 # plotting:
 pd.Series(qty_non_zero_addresses_per_block).plot()
